@@ -1,0 +1,1421 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: agents.agents.enterprise.com
+spec:
+  group: agents.enterprise.com
+  scope: Namespaced
+  names:
+    kind: Agent
+    listKind: AgentList
+    plural: agents
+    singular: agent
+    shortNames:
+    - ag
+  versions:
+  - name: v1alpha9
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: Version
+      type: string
+      jsonPath: .spec.identity.version
+    - name: Env
+      type: string
+      jsonPath: .spec.deploymentContext.environment
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    schema:
+      openAPIV3Schema:
+        description: Agent defines an AI Agent as configuration-as-code.
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            description: AgentSpec
+            x-kubernetes-validations:
+            - rule: '!has(self.tools) || !has(self.mcpServers) || self.tools.all(t, !has(t.mcp) || !has(t.mcp.serverRef) ||
+                ((has(t.mcp.serverRef.urn) && self.mcpServers.exists(s, has(s.identity) && has(s.identity.urn) && s.identity.urn
+                == t.mcp.serverRef.urn)) || (has(t.mcp.serverRef.uuid) && self.mcpServers.exists(s, has(s.identity) && has(s.identity.uuid)
+                && s.identity.uuid == t.mcp.serverRef.uuid))))'
+              message: Each tool must reference an existing MCP server via tools[].mcp.serverRef (urn or uuid).
+            - rule: (!has(self.llm) || !has(self.llm.gatewayRef) || (has(self.llmGateways) && ((has(self.llm.gatewayRef.urn)
+                && self.llmGateways.exists(g, has(g.identity) && has(g.identity.urn) && g.identity.urn == self.llm.gatewayRef.urn))
+                || (has(self.llm.gatewayRef.uuid) && self.llmGateways.exists(g, has(g.identity) && has(g.identity.uuid) &&
+                g.identity.uuid == self.llm.gatewayRef.uuid)))))
+              message: llm.gatewayRef must match an llmGateways entry (urn or uuid).
+            required:
+            - ownership
+            - role
+            - goal
+            - llm
+            properties:
+              schemaVersion:
+                type: string
+                description: The version of the Agent schema (e.g., v1alpha9).
+              identity:
+                type: object
+                description: Provides a stable identity and provenance information for the agent.
+                properties:
+                  urn:
+                    type: string
+                    description: Unique Resource Name for the agent.
+                  uuid:
+                    type: string
+                    format: uuid
+                    description: Universally Unique Identifier for the agent.
+                  displayName:
+                    type: string
+                    description: Human-readable name for the agent.
+                  icon:
+                    type: string
+                    description: URL to an icon representing the agent.
+                  version:
+                    type: string
+                    description: Semantic version of the agent definition.
+                  ownerContacts:
+                    type: array
+                    items:
+                      type: string
+                      description: Contact email or identifier for the owner.
+                  createdAt:
+                    type: string
+                    format: date-time
+                    description: Timestamp of agent creation.
+                  updatedAt:
+                    type: string
+                    format: date-time
+                    description: Timestamp of last agent update.
+                x-kubernetes-validations:
+                - rule: has(self.urn) || has(self.uuid)
+                  message: Provide identity.urn or identity.uuid.
+              deploymentContext:
+                type: object
+                description: Defines the deployment and operational context for the agent.
+                properties:
+                  tenantId:
+                    type: string
+                    description: Tenant identifier for multi-tenancy.
+                  workspaceId:
+                    type: string
+                    description: Workspace identifier within a tenant.
+                  environment:
+                    type: string
+                    enum:
+                    - playground
+                    - dev
+                    - test
+                    - stage
+                    - prod
+                    description: The environment the agent is intended for.
+                  labels:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  tags:
+                    type: array
+                    items:
+                      type: string
+                  lifecycle:
+                    type: string
+                    enum:
+                    - ideation
+                    - prototype
+                    - development
+                    - testing
+                    - staging
+                    - prod
+                    description: Current lifecycle stage of the agent.
+              ownership:
+                type: object
+                required:
+                - team
+                properties:
+                  organization:
+                    type: string
+                    description: Owning organization.
+                  team:
+                    type: string
+                    description: Owning team (required).
+                  user:
+                    type: string
+                    description: Primary contact user.
+                  sloEmail:
+                    type: string
+                    description: Email for SLO notifications.
+                  askId:
+                    type: string
+                    description: Internal identifier for the originating request/ask.
+              role:
+                type: string
+                description: The designated role or title of the agent (e.g., 'Senior Clinical Coder').
+              goal:
+                type: string
+                description: The primary objective or task the agent is designed to accomplish.
+              backstory:
+                type: string
+                description: An optional narrative background that provides context and personality to the agent.
+              systemPrompt:
+                type: string
+                description: The core system prompt or instructions that define the agent's behavior and operational guidelines.
+              promptTemplateRef:
+                type: string
+                description: A reference to a prompt template in the central POML library (e.g., 'prompts/poml/clinical/summarize-note.poml').
+                  This is an alternative to an inline systemPrompt.
+              persona:
+                type: object
+                properties:
+                  agentType:
+                    type: string
+                    description: High-level agent type (e.g., Analyst, Assistant, ToolUser).
+                  tone:
+                    type: string
+                    description: Desired communication tone (e.g., Formal, Friendly, Technical).
+                  topics:
+                    type: array
+                    items:
+                      type: string
+                      description: Topics the agent is knowledgeable about or focused on.
+              ioConfig:
+                type: object
+                properties:
+                  inputs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        format:
+                          type: string
+                          enum:
+                          - text
+                          - file
+                          - image
+                          - audio
+                          - video
+                          - json
+                          - xml
+                          description: Supported input format.
+                        schemaDefinition:
+                          type: string
+                          description: Inline JSON Schema definition for structured inputs.
+                        schemaRef:
+                          type: string
+                          description: Reference to an external schema definition.
+                        contentTypes:
+                          type: array
+                          items:
+                            type: string
+                            description: Specific MIME types (e.g., application/pdf, text/csv).
+                  outputs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        format:
+                          type: string
+                          enum:
+                          - text
+                          - file
+                          - image
+                          - audio
+                          - video
+                          - json
+                          - xml
+                          description: Supported output format.
+                        schemaDefinition:
+                          type: string
+                          description: Inline JSON Schema definition for structured outputs.
+                        schemaRef:
+                          type: string
+                          description: Reference to an external schema definition.
+                        contentTypes:
+                          type: array
+                          items:
+                            type: string
+                            description: Specific MIME types (e.g., application/json, image/png).
+              behavior:
+                type: object
+                properties:
+                  responseFormat:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - text
+                        - json
+                        - xml
+                        description: Desired LLM response format.
+                      jsonSchemaRef:
+                        type: string
+                        description: Reference to a JSON schema for structured LLM output.
+                  toolChoice:
+                    type: string
+                    enum:
+                    - auto
+                    - required
+                    - none
+                    description: Control how the agent uses tools.
+                  reasoning:
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                        description: Enable advanced reasoning features (if supported by LLM).
+                      maxReasoningTokens:
+                        type: integer
+                        description: Maximum tokens to allocate for reasoning.
+                  determinism:
+                    type: object
+                    properties:
+                      seed:
+                        type: integer
+                        description: Seed for LLM sampling (if supported).
+                      idempotencyKey:
+                        type: string
+                        description: Key to ensure idempotent requests.
+                  contextWindow:
+                    type: object
+                    properties:
+                      maxPromptTokens:
+                        type: integer
+                        description: Maximum tokens allowed in the prompt.
+                      truncationStrategy:
+                        type: string
+                        enum:
+                        - front
+                        - middle
+                        - back
+                        description: How to truncate context if needed.
+              llmGateways:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - identity
+                  - endpoint
+                  - authentication
+                  properties:
+                    identity:
+                      type: object
+                      properties:
+                        urn:
+                          type: string
+                          description: Unique Resource Name for the gateway.
+                        uuid:
+                          type: string
+                          format: uuid
+                          description: Universally Unique Identifier for the gateway.
+                        displayName:
+                          type: string
+                          description: Human-readable name for the gateway.
+                      x-kubernetes-validations:
+                      - rule: has(self.urn) || has(self.uuid)
+                        message: Provide gateway identity URN or UUID.
+                    endpoint:
+                      type: string
+                      description: Base URL for the LLM gateway API.
+                    vendor:
+                      type: string
+                      description: LLM vendor (e.g., OpenAI, Anthropic).
+                    apiVersion:
+                      type: string
+                      description: API version of the gateway.
+                    defaultModel:
+                      type: string
+                      description: Default model to use if not specified in `llm`.
+                    models:
+                      type: array
+                      items:
+                        type: string
+                        description: List of models supported by this gateway.
+                    authentication:
+                      type: object
+                      required:
+                      - type
+                      properties:
+                        type:
+                          type: string
+                          enum:
+                          - OAuth2.1
+                          - ApiKey
+                          - OIDC
+                          - ManagedIdentity
+                          - None
+                          description: Authentication type.
+                        oauth2_1:
+                          type: object
+                          properties:
+                            clientId:
+                              type: string
+                              description: Client ID (if static).
+                            clientSecretRef:
+                              type: object
+                              required:
+                              - keyName
+                              properties:
+                                keyName:
+                                  type: string
+                                  description: Key name within the secret.
+                            tokenUrl:
+                              type: string
+                              description: Token endpoint URL.
+                            scope:
+                              type: string
+                              description: OAuth scope.
+                        apiKey:
+                          type: object
+                          properties:
+                            headerName:
+                              type: string
+                              description: Header name for the API key.
+                            secretRef:
+                              type: object
+                              required:
+                              - keyName
+                              properties:
+                                keyName:
+                                  type: string
+                                  description: Key name within the secret.
+                        oidc:
+                          type: object
+                          properties:
+                            issuer:
+                              type: string
+                              description: OIDC Issuer URL.
+                            audience:
+                              type: string
+                              description: Intended audience for the token.
+                            clientId:
+                              type: string
+                              description: Client ID (if static).
+                            clientSecretRef:
+                              type: object
+                              required:
+                              - keyName
+                              properties:
+                                keyName:
+                                  type: string
+                                  description: Key name within the secret.
+                        managedIdentity:
+                          type: object
+                          properties:
+                            clientId:
+                              type: string
+                              description: Client ID of the managed identity.
+                      x-kubernetes-validations:
+                      - rule: self.type != 'OAuth2.1' || has(self.oauth2_1)
+                        message: OAuth2.1 selected but oauth2_1 missing.
+                      - rule: self.type != 'ApiKey'   || has(self.apiKey)
+                        message: ApiKey selected but apiKey missing.
+                      - rule: self.type != 'OIDC'     || has(self.oidc)
+                        message: OIDC selected but oidc missing.
+              llm:
+                type: object
+                required:
+                - model
+                properties:
+                  provider:
+                    type: string
+                    enum:
+                    - AmazonBedrock
+                    - Anthropic
+                    - AzureOpenAI
+                    - Cohere
+                    - GoogleVertexAI
+                    - Local
+                    - Meta
+                    - MistralAI
+                    - Ollama
+                    - OpenAI
+                    description: Direct LLM provider (alternative to using a gateway).
+                  gatewayRef:
+                    type: object
+                    properties:
+                      urn:
+                        type: string
+                        description: URN of the LLM gateway to use.
+                      uuid:
+                        type: string
+                        format: uuid
+                        description: UUID of the LLM gateway to use.
+                    x-kubernetes-validations:
+                    - rule: has(self.urn) || has(self.uuid)
+                      message: gatewayRef requires URN or UUID.
+                  model:
+                    type: string
+                    description: Specific model name to use.
+                  parameters:
+                    type: object
+                    properties:
+                      temperature:
+                        type: number
+                        description: Sampling temperature.
+                      topP:
+                        type: number
+                        description: Top-p (nucleus) sampling.
+                      maxTokens:
+                        type: integer
+                        description: Maximum number of tokens to generate.
+                      stopSequences:
+                        type: array
+                        items:
+                          type: string
+                          description: Sequence to stop generation.
+                x-kubernetes-validations:
+                - rule: has(self.provider) || has(self.gatewayRef)
+                  message: Provide either llm.provider or llm.gatewayRef.
+              mcpServers:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - identity
+                  - url
+                  - authentication
+                  properties:
+                    identity:
+                      type: object
+                      properties:
+                        urn:
+                          type: string
+                          description: Unique Resource Name for the MCP server.
+                        uuid:
+                          type: string
+                          format: uuid
+                          description: Universally Unique Identifier for the MCP server.
+                        displayName:
+                          type: string
+                          description: Human-readable name for the MCP server.
+                      x-kubernetes-validations:
+                      - rule: has(self.urn) || has(self.uuid)
+                        message: Provide MCP identity URN or UUID.
+                    name:
+                      type: string
+                      description: 'DEPRECATED: This field will be removed in a future release (target: v1beta). Please migrate
+                        to using ''identity.displayName'' instead. For migration, copy the value of ''name'' to ''identity.displayName''
+                        and update your manifests accordingly.'
+                    url:
+                      type: string
+                      description: Base URL for the MCP server.
+                    protocol:
+                      type: string
+                      enum:
+                      - http
+                      - https
+                      - ws
+                      - wss
+                      - grpc
+                      description: Communication protocol.
+                    authentication:
+                      type: object
+                      required:
+                      - type
+                      properties:
+                        type:
+                          type: string
+                          enum:
+                          - OAuth2.1
+                          - ApiKey
+                          - OIDC
+                          - ManagedIdentity
+                          - None
+                          description: Authentication type.
+                        oauth2_1:
+                          type: object
+                          properties:
+                            clientId:
+                              type: string
+                              description: Client ID (if static).
+                            clientSecretRef:
+                              type: object
+                              required:
+                              - keyName
+                              properties:
+                                keyName:
+                                  type: string
+                                  description: Key name within the secret.
+                            tokenUrl:
+                              type: string
+                              description: Token endpoint URL.
+                            scope:
+                              type: string
+                              description: OAuth scope.
+                        apiKey:
+                          type: object
+                          properties:
+                            headerName:
+                              type: string
+                              description: Header name for the API key.
+                            secretRef:
+                              type: object
+                              required:
+                              - keyName
+                              properties:
+                                keyName:
+                                  type: string
+                                  description: Key name within the secret.
+                        oidc:
+                          type: object
+                          properties:
+                            issuer:
+                              type: string
+                              description: OIDC Issuer URL.
+                            audience:
+                              type: string
+                              description: Intended audience for the token.
+                            clientId:
+                              type: string
+                              description: Client ID (if static).
+                            clientSecretRef:
+                              type: object
+                              required:
+                              - keyName
+                              properties:
+                                keyName:
+                                  type: string
+                                  description: Key name within the secret.
+                        managedIdentity:
+                          type: object
+                          properties:
+                            clientId:
+                              type: string
+                              description: Client ID of the managed identity.
+                      x-kubernetes-validations:
+                      - rule: self.type != 'OAuth2.1' || has(self.oauth2_1)
+                        message: OAuth2.1 selected but oauth2_1 missing.
+                      - rule: self.type != 'ApiKey'   || has(self.apiKey)
+                        message: ApiKey selected but apiKey missing.
+                      - rule: self.type != 'OIDC'     || has(self.oidc)
+                        message: OIDC selected but oidc missing.
+              tools:
+                type: array
+                description: MCP tool bindings for this agent.
+                items:
+                  type: object
+                  required:
+                  - name
+                  - mcp
+                  properties:
+                    identity:
+                      type: object
+                      properties:
+                        urn:
+                          type: string
+                          description: Unique Resource Name for the tool.
+                        uuid:
+                          type: string
+                          format: uuid
+                          description: Universally Unique Identifier for the tool.
+                      x-kubernetes-validations:
+                      - rule: has(self.urn) || has(self.uuid)
+                        message: Provide tool identity URN or UUID.
+                    name:
+                      type: string
+                      description: Name of the tool binding within the agent.
+                    description:
+                      type: string
+                      description: Description of the tool's purpose for this agent.
+                    mcp:
+                      type: object
+                      required:
+                      - serverRef
+                      - toolName
+                      properties:
+                        serverRef:
+                          type: object
+                          properties:
+                            urn:
+                              type: string
+                              description: URN of the MCP server providing the tool.
+                            uuid:
+                              type: string
+                              format: uuid
+                              description: UUID of the MCP server providing the tool.
+                          x-kubernetes-validations:
+                          - rule: has(self.urn) || has(self.uuid)
+                            message: serverRef requires URN or UUID.
+                        toolName:
+                          type: string
+                          description: Name of the tool as defined by the MCP server.
+                        version:
+                          type: string
+                          description: Specific version of the tool to use (if supported).
+                        schemaHash:
+                          type: string
+                          description: Hash of the tool schema for validation (if supported).
+                    defaults:
+                      type: object
+                      additionalProperties: true
+                      description: Default parameter values for the tool call.
+                    parameterMapping:
+                      type: object
+                      additionalProperties:
+                        type: object
+                      description: Mapping from agent/tool input to specific tool parameters.
+                    timeoutMs:
+                      type: integer
+                      description: Timeout for the tool call in milliseconds.
+                    retries:
+                      type: integer
+                      description: Number of retries for the tool call.
+                    cacheTTL:
+                      type: integer
+                      description: Cache time-to-live for tool results in seconds.
+                    limits:
+                      type: object
+                      properties:
+                        rpm:
+                          type: integer
+                          description: Requests per minute limit.
+                        concurrency:
+                          type: integer
+                          description: Maximum concurrent calls.
+                    authOverride:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                          enum:
+                          - ApiKey
+                          - OAuth2.1
+                          - OIDC
+                          - ManagedIdentity
+                          - None
+                          description: Authentication type override.
+                        secretRef:
+                          type: object
+                          required:
+                          - keyName
+                          properties:
+                            keyName:
+                              type: string
+                              description: Key name within the secret.
+              knowledgeBases:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - name
+                  - type
+                  properties:
+                    identity:
+                      type: object
+                      properties:
+                        urn:
+                          type: string
+                          description: Unique Resource Name for the knowledge base.
+                        uuid:
+                          type: string
+                          format: uuid
+                          description: Universally Unique Identifier for the knowledge base.
+                    name:
+                      type: string
+                      description: Name of the knowledge base binding within the agent.
+                    type:
+                      type: string
+                      enum:
+                      - AzureBlobVectorize
+                      - PostgresPgvector
+                      - AzureCosmosDb
+                      - AzureAISearch
+                      description: Type of knowledge base.
+                    connection:
+                      type: object
+                      properties:
+                        connectionStringSecretRef:
+                          type: object
+                          required:
+                          - keyName
+                          properties:
+                            keyName:
+                              type: string
+                              description: Key name within the secret.
+                        endpoint:
+                          type: string
+                          description: Endpoint URL (if applicable).
+                        database:
+                          type: string
+                          description: Database name (if applicable).
+                        index:
+                          type: string
+                          description: Index name (if applicable).
+                    indexing:
+                      type: object
+                      properties:
+                        autoIngest:
+                          type: boolean
+                          description: Enable automatic ingestion of new data.
+                        schedule:
+                          type: string
+                          description: Cron-like schedule for ingestion.
+              rag:
+                type: object
+                properties:
+                  ingestion:
+                    type: object
+                    properties:
+                      chunker:
+                        type: string
+                        enum:
+                        - token
+                        - sentence
+                        - semantic
+                        description: Method for chunking text.
+                      chunkSize:
+                        type: integer
+                        description: Size of each text chunk.
+                      chunkOverlap:
+                        type: integer
+                        description: Overlap between chunks.
+                      dedupe:
+                        type: boolean
+                        description: Enable duplicate detection/removal.
+                      schedule:
+                        type: string
+                        description: Cron-like schedule for ingestion.
+                  embedding:
+                    type: object
+                    properties:
+                      model:
+                        type: string
+                        description: Model used for generating embeddings.
+                      dimension:
+                        type: integer
+                        description: Dimensionality of the embeddings.
+                  index:
+                    type: object
+                    properties:
+                      metric:
+                        type: string
+                        enum:
+                        - cosine
+                        - dot
+                        - euclidean
+                        description: Distance metric for similarity search.
+                      hnsw:
+                        type: object
+                        properties:
+                          m:
+                            type: integer
+                            description: Number of bi-directional links created for every new element.
+                          efConstruction:
+                            type: integer
+                            description: Size of the dynamic candidate list for construction.
+                      ivf:
+                        type: object
+                        properties:
+                          nlist:
+                            type: integer
+                            description: Number of clusters.
+                          nprobe:
+                            type: integer
+                            description: Number of clusters to probe during search.
+                      hybrid:
+                        type: boolean
+                        description: Enable hybrid search (keyword + vector).
+                  retrieval:
+                    type: object
+                    properties:
+                      topK:
+                        type: integer
+                        description: Number of top results to retrieve.
+                      mmr:
+                        type: boolean
+                        description: Use Maximal Marginal Relevance for diversity.
+                      filtersRef:
+                        type: string
+                        description: Reference to retrieval filters.
+                      recencyBoost:
+                        type: boolean
+                        description: Boost score of more recent documents.
+                      requireCitations:
+                        type: boolean
+                        description: Require retrieved documents to be cited in the output.
+                  retention:
+                    type: object
+                    properties:
+                      ttlDays:
+                        type: integer
+                        description: Time-to-live for indexed data in days.
+                      lineage:
+                        type: boolean
+                        description: Track data lineage.
+              a2aRegistries:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - identity
+                  - url
+                  - authentication
+                  properties:
+                    identity:
+                      type: object
+                      properties:
+                        urn:
+                          type: string
+                          description: Unique Resource Name for the A2A registry.
+                        uuid:
+                          type: string
+                          format: uuid
+                          description: Universally Unique Identifier for the A2A registry.
+                        displayName:
+                          type: string
+                          description: Human-readable name for the registry.
+                      x-kubernetes-validations:
+                      - rule: has(self.urn) || has(self.uuid)
+                        message: Provide registry identity URN or UUID.
+                    url:
+                      type: string
+                      description: Base URL for the A2A registry.
+                    protocol:
+                      type: string
+                      enum:
+                      - http
+                      - https
+                      - ws
+                      - wss
+                      - grpc
+                      description: Communication protocol.
+                    authentication:
+                      type: object
+                      required:
+                      - clientId
+                      - clientSecretRef
+                      - tokenUrl
+                      properties:
+                        clientId:
+                          type: string
+                          description: OAuth2.1 client ID.
+                        clientSecretRef:
+                          type: object
+                          required:
+                          - keyName
+                          properties:
+                            keyName:
+                              type: string
+                              description: Key name within the Kubernetes Secret containing the client secret.
+                        tokenUrl:
+                          type: string
+                          format: uri
+                          description: OAuth2.1 token endpoint URL.
+                        scopes:
+                          type: array
+                          items:
+                            type: string
+                            description: OAuth2.1 scope.
+              a2a:
+                type: object
+                properties:
+                  card:
+                    type: object
+                    required:
+                    - protocolVersion
+                    - preferredInterface
+                    - defaultInputModes
+                    - defaultOutputModes
+                    - skills
+                    properties:
+                      protocolVersion:
+                        type: string
+                        description: Version of the A2A protocol supported.
+                      name:
+                        type: string
+                        description: Name of the agent for A2A interactions.
+                      description:
+                        type: string
+                        description: Description of the agent for A2A interactions.
+                      version:
+                        type: string
+                        description: Version of the agent for A2A interactions.
+                      iconUrl:
+                        type: string
+                        description: URL to the agent's icon for A2A interactions.
+                      documentationUrl:
+                        type: string
+                        description: URL to the agent's documentation for A2A interactions.
+                      provider:
+                        type: object
+                        properties:
+                          organization:
+                            type: string
+                            description: Organization providing the agent.
+                          url:
+                            type: string
+                            description: URL of the provider organization.
+                      preferredInterface:
+                        type: object
+                        required:
+                        - url
+                        - transport
+                        properties:
+                          url:
+                            type: string
+                            description: URL for the preferred interface.
+                          transport:
+                            type: string
+                            enum:
+                            - JSONRPC
+                            - GRPC
+                            - HTTP+JSON
+                            description: Transport protocol for the interface.
+                      additionalInterfaces:
+                        type: array
+                        items:
+                          type: object
+                          required:
+                          - url
+                          - transport
+                          properties:
+                            url:
+                              type: string
+                              description: URL for the additional interface.
+                            transport:
+                              type: string
+                              enum:
+                              - JSONRPC
+                              - GRPC
+                              - HTTP+JSON
+                              description: Transport protocol for the interface.
+                      capabilities:
+                        type: object
+                        properties:
+                          streaming:
+                            type: boolean
+                            description: Supports streaming responses.
+                          pushNotifications:
+                            type: boolean
+                            description: Supports push notifications.
+                          stateTransitionHistory:
+                            type: boolean
+                            description: Provides state transition history.
+                          extensions:
+                            type: array
+                            items:
+                              type: object
+                              required:
+                              - uri
+                              properties:
+                                uri:
+                                  type: string
+                                  description: URI identifying the extension.
+                                description:
+                                  type: string
+                                  description: Description of the extension.
+                                required:
+                                  type: boolean
+                                  description: Whether the extension is required.
+                                params:
+                                  type: object
+                                  additionalProperties: true
+                                  description: Parameters for the extension.
+                      securitySchemes:
+                        type: object
+                        additionalProperties:
+                          type: object
+                        description: Security schemes supported by the agent.
+                      security:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties:
+                            type: array
+                            items:
+                              type: string
+                          description: Security requirements for the agent.
+                      defaultInputModes:
+                        type: array
+                        items:
+                          type: string
+                        description: Default input modes supported.
+                      defaultOutputModes:
+                        type: array
+                        items:
+                          type: string
+                        description: Default output modes supported.
+                      skills:
+                        type: array
+                        items:
+                          type: object
+                          required:
+                          - id
+                          - name
+                          - description
+                          - tags
+                          properties:
+                            id:
+                              type: string
+                              description: Unique identifier for the skill.
+                            name:
+                              type: string
+                              description: Name of the skill.
+                            description:
+                              type: string
+                              description: Description of the skill.
+                            tags:
+                              type: array
+                              items:
+                                type: string
+                              description: Tags associated with the skill.
+                            examples:
+                              type: array
+                              items:
+                                type: string
+                              description: Example usages of the skill.
+                            inputModes:
+                              type: array
+                              items:
+                                type: string
+                              description: Supported input modes for this skill.
+                            outputModes:
+                              type: array
+                              items:
+                                type: string
+                              description: Supported output modes for this skill.
+                            security:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties:
+                                  type: array
+                                  items:
+                                    type: string
+                                description: Security requirements for this skill.
+                      supportsAuthenticatedExtendedCard:
+                        type: boolean
+                        description: Indicates if the agent supports authenticated extended cards.
+                  publishTo:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - registryRef
+                      properties:
+                        registryRef:
+                          type: object
+                          properties:
+                            urn:
+                              type: string
+                              description: URN of the registry.
+                            uuid:
+                              type: string
+                              format: uuid
+                              description: UUID of the registry.
+                          x-kubernetes-validations:
+                          - rule: has(self.urn) || has(self.uuid)
+                            message: registryRef requires URN or UUID.
+                        visibility:
+                          type: string
+                          enum:
+                          - private
+                          - workspace
+                          - tenant
+                          - public
+                          description: Visibility level in the registry.
+                  discovery:
+                    type: object
+                    properties:
+                      registryRefs:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            urn:
+                              type: string
+                              description: URN of the registry to query.
+                            uuid:
+                              type: string
+                              format: uuid
+                              description: UUID of the registry to query.
+                          x-kubernetes-validations:
+                          - rule: has(self.urn) || has(self.uuid)
+                            message: registryRef requires URN or UUID.
+                  callPolicy:
+                    type: object
+                    properties:
+                      allowedAgentAudiences:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            urn:
+                              type: string
+                              description: URN of the allowed agent.
+                            uuid:
+                              type: string
+                              format: uuid
+                              description: UUID of the allowed agent.
+                          x-kubernetes-validations:
+                          - rule: has(self.urn) || has(self.uuid)
+                            message: audience requires URN or UUID.
+              stateManagement:
+                type: object
+                properties:
+                  memory:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - InMemory
+                        - Redis
+                        - Postgres
+                        description: Type of memory store.
+                      retentionPolicy:
+                        type: string
+                        description: Policy for retaining memory data (e.g., 'session', 'lastN', 'timeWindow').
+                  session:
+                    type: object
+                    properties:
+                      ttlSeconds:
+                        type: integer
+                        description: Time-to-live for session data in seconds.
+                      store:
+                        type: string
+                        enum:
+                        - InMemory
+                        - Redis
+                        - Postgres
+                        description: Type of session store.
+              secretsProvider:
+                type: object
+                required:
+                - type
+                - azureKeyVault
+                properties:
+                  type:
+                    type: string
+                    enum:
+                    - AzureKeyVault
+                    description: Type of secret provider.
+                  azureKeyVault:
+                    type: object
+                    properties:
+                      vaultName:
+                        type: string
+                        description: Name of the Azure Key Vault.
+                      tenantId:
+                        type: string
+                        description: Azure Tenant ID for the Key Vault.
+                      useManagedIdentity:
+                        type: boolean
+                        description: Use Managed Identity for authentication.
+              securityConfig:
+                type: object
+                properties:
+                  guardrails:
+                    type: object
+                    properties:
+                      input:
+                        type: object
+                        description: Configuration for input validation/analysis.
+                      output:
+                        type: object
+                        description: Configuration for output validation/analysis.
+                  evaluations:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - name
+                      - metric
+                      properties:
+                        name:
+                          type: string
+                          description: Name of the evaluation.
+                        metric:
+                          type: string
+                          description: Metric to evaluate (e.g., accuracy, toxicity).
+                        datasetRef:
+                          type: string
+                          description: Reference to the evaluation dataset.
+                        schedule:
+                          type: string
+                          description: Cron-like schedule for evaluation runs.
+              security:
+                type: object
+                properties:
+                  rbac:
+                    type: object
+                    properties:
+                      roles:
+                        type: array
+                        items:
+                          type: string
+                        description: Roles assigned to the agent.
+                      allowedCallers:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            urn:
+                              type: string
+                              description: URN of the allowed caller agent.
+                            uuid:
+                              type: string
+                              format: uuid
+                              description: UUID of the allowed caller agent.
+                  dataPolicy:
+                    type: object
+                    properties:
+                      classification:
+                        type: string
+                        enum:
+                        - Public
+                        - Internal
+                        - Confidential
+                        - PHI
+                        description: Data classification level.
+                      redactPII:
+                        type: boolean
+                        description: Automatically redact PII from inputs/outputs.
+                      retentionDays:
+                        type: integer
+                        description: Data retention period in days.
+                  egress:
+                    type: object
+                    properties:
+                      allowlist:
+                        type: array
+                        items:
+                          type: string
+                        description: List of allowed external domains/URLs.
+                      mtls:
+                        type: boolean
+                        description: Require mutual TLS for egress connections.
+                      jwksUri:
+                        type: string
+                        description: URI for JWKS for validating outbound tokens.
+                  secrets:
+                    type: object
+                    properties:
+                      rotationDays:
+                        type: integer
+                        description: Secret rotation interval in days.
+                      useManagedIdentity:
+                        type: boolean
+                        description: Use Managed Identity for secret access.
+              ops:
+                type: object
+                properties:
+                  timeouts:
+                    type: object
+                    properties:
+                      defaultMs:
+                        type: integer
+                        description: Default timeout for operations in milliseconds.
+                  retries:
+                    type: object
+                    properties:
+                      max:
+                        type: integer
+                        description: Maximum number of retries.
+                      backoffMs:
+                        type: integer
+                        description: Base backoff time in milliseconds.
+                  rateLimit:
+                    type: object
+                    properties:
+                      rpm:
+                        type: integer
+                        description: Default requests per minute limit.
+                      rps:
+                        type: integer
+                        description: Default requests per second limit.
+                  resources:
+                    type: object
+                    properties:
+                      cpu:
+                        type: string
+                        description: CPU request/limit (e.g., '500m', '2').
+                      memory:
+                        type: string
+                        description: Memory request/limit (e.g., '1Gi', '512Mi').
+                      gpu:
+                        type: string
+                        description: GPU request/limit (e.g., '1').
+              evaluation:
+                type: object
+                properties:
+                  datasets:
+                    type: array
+                    items:
+                      type: string
+                    description: References to evaluation datasets.
+                  metrics:
+                    type: array
+                    items:
+                      type: string
+                    description: List of metrics to evaluate.
+                  thresholds:
+                    type: object
+                    additionalProperties:
+                      type: number
+                    description: Thresholds for evaluation metrics.
+                  gatingPolicy:
+                    type: string
+                    enum:
+                    - none
+                    - warn
+                    - block
+                    description: Policy for gating deployment based on evaluation results.
+              community:
+                type: object
+                properties:
+                  docsUrl:
+                    type: string
+                    format: uri
+                    description: URL to the agent's documentation.
+                  examplesUrl:
+                    type: string
+                    format: uri
+                    description: URL to example usages.
+                  contributionGuideUrl:
+                    type: string
+                    format: uri
+                    description: URL to the contribution guide.
+                  license:
+                    type: string
+                    description: License for the agent definition.
+            oneOf:
+            - required:
+              - systemPrompt
+            - required:
+              - promptTemplateRef
+          status:
+            type: object
+            description: Observed state of the Agent.
+            properties:
+              phase:
+                type: string
+                description: Current phase of the agent (e.g., Pending, Running, Failed).
+              conditions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                      description: Type of condition (e.g., Available, Progressing).
+                    status:
+                      type: string
+                      description: Status of the condition (True, False, Unknown).
+                    lastTransitionTime:
+                      type: string
+                      description: Last time the condition transitioned.
+                    reason:
+                      type: string
+                      description: Machine-readable reason for the condition.
+                    message:
+                      type: string
+                      description: Human-readable message for the condition.
